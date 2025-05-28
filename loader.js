@@ -13,7 +13,7 @@
     initializationPromise: null,
     
     // CDN base URL (có thể override)
-    cdnBase: 'https://locpham1020.github.io/dorik-modules/',
+    cdnBase: 'https://raw.githubusercontent.com/locpham1020/dorik-modules/main/',
     
     // Module configuration
     modules: {
