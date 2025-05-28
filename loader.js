@@ -1,6 +1,6 @@
 /**
- * LOADER.JS - Module Loader & Main Initialization
- * Orchestrates loading và initialization của tất cả modules
+ * LOADER.JS - Main Orchestrator & Event Handler
+ * Loads all modules, initializes system, handles global events
  */
 
 (function() {
@@ -12,10 +12,10 @@
     loadedModules: new Set(),
     initializationPromise: null,
     
-    // CDN base URL (có thể override)
+    // CDN base URL
     cdnBase: 'https://raw.githubusercontent.com/locpham1020/dorik-modules/main/',
     
-    // Module configuration
+    // Module configuration with dependencies
     modules: {
       config: {
         file: 'config.min.js',
@@ -51,6 +51,12 @@
         required: false,
         priority: 6,
         depends: ['config']
+      },
+      lazy: {
+        file: 'lazy.min.js',
+        required: false,
+        priority: 7,
+        depends: ['config', 'firebase']
       }
     },
 
@@ -68,7 +74,7 @@
     // Internal initialization
     async _performInit(options) {
       try {
-        console.log('🚀 === DORIK UNIFIED SYSTEM v2.0 ===');
+        console.log('🚀 === DORIK UNIFIED SYSTEM v2.0 MODULAR ===');
         
         // Override CDN base if provided
         if (options.cdnBase) {
@@ -89,11 +95,11 @@
         // Initialize modules
         await this.initializeModules();
 
-        // Setup lazy loading system
-        this.setupLazyLoading();
+        // Setup global event handlers
+        this.setupGlobalEventHandlers();
 
         // Setup cleanup handlers
-        this.setupCleanup();
+        this.setupCleanupHandlers();
 
         // Setup performance monitoring
         this.setupPerformanceMonitoring();
@@ -139,10 +145,12 @@
           this.loadedModules.add(name);
           
         } catch (error) {
-          console.error(`Failed to load module ${name}:`, error);
+          console.error(`❌ Failed to load module ${name}:`, error);
           
           if (config.required) {
             throw new Error(`Required module ${name} failed to load: ${error.message}`);
+          } else {
+            console.warn(`⚠️ Optional module ${name} skipped due to error`);
           }
         }
       }
@@ -182,7 +190,7 @@
       console.log('⚙️ Initializing modules...');
       
       // Initialize in order
-      const initOrder = ['config', 'cache', 'firebase', 'tracking', 'gallery', 'forms'];
+      const initOrder = ['config', 'cache', 'firebase', 'tracking', 'gallery', 'forms', 'lazy'];
       
       for (const moduleName of initOrder) {
         if (!this.loadedModules.has(moduleName)) {
@@ -192,7 +200,7 @@
         try {
           await this.initializeModule(moduleName);
         } catch (error) {
-          console.error(`Module ${moduleName} initialization failed:`, error);
+          console.error(`❌ Module ${moduleName} initialization failed:`, error);
           
           if (this.modules[moduleName]?.required) {
             throw error;
@@ -206,7 +214,7 @@
       const moduleMap = {
         config: () => {
           // Config module auto-initializes, just verify
-          if (!window.DorikConfig || !window.DorikUtils) {
+          if (!window.DorikConfig || !window.DorikUtils || !window.DorikState) {
             throw new Error('Config module not properly loaded');
           }
         },
@@ -214,7 +222,8 @@
         firebase: () => window.DorikFirebase?.init(),
         tracking: () => window.DorikTracking?.init(),
         gallery: () => window.DorikGallery?.init(),
-        forms: () => window.DorikForms?.init()
+        forms: () => window.DorikForms?.init(),
+        lazy: () => window.DorikLazy?.init()
       };
 
       const initFn = moduleMap[moduleName];
@@ -228,120 +237,128 @@
       }
     },
 
-    // Setup lazy loading system
-    setupLazyLoading() {
-      const config = window.DorikConfig;
-      if (!config) return;
-
-      // Create intersection observer for lazy loading
-      const observer = new IntersectionObserver(
-        this.handleIntersection.bind(this),
-        {
-          rootMargin: config.VIEWPORT_MARGIN,
-          threshold: 0.1
-        }
-      );
-
-      // Observe all product containers
-      const containers = document.querySelectorAll('[id^="container-"]');
-      containers.forEach(container => observer.observe(container));
-
-      // Store observer reference
-      if (window.DorikState) {
-        window.DorikState.observers.intersection = observer;
-      }
-
-      console.log(`👁️ Lazy loading setup for ${containers.length} containers`);
+    // Setup global event handlers
+    setupGlobalEventHandlers() {
+      // Main click handler
+      document.addEventListener('click', this.handleGlobalClick.bind(this));
+      
+      // Keyboard handlers
+      document.addEventListener('keydown', this.handleKeydown.bind(this));
+      
+      console.log('👂 Global event handlers active');
     },
 
-    // Handle intersection (lazy loading)
-    async handleIntersection(entries) {
-      const config = window.DorikConfig;
-      const containersToLoad = [];
-
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const containerId = entry.target.id;
-          
-          // Skip if already processed
-          if (window.DorikState?.processedContainers.has(containerId)) {
-            return;
-          }
-
-          containersToLoad.push({
-            id: containerId,
-            element: entry.target,
-            distance: this.getDistanceFromViewport(entry.target)
-          });
-        }
-      });
-
-      if (containersToLoad.length === 0) {
+    // Handle global clicks
+    handleGlobalClick(event) {
+      const target = event.target;
+      
+      // Gallery triggers
+      const isMainImage = target.hasAttribute('data-field') && target.getAttribute('data-field') === 'img_main';
+      const isSeeMore = target.hasAttribute('data-field') && target.getAttribute('data-field') === 'see_more';
+      
+      // Order trigger
+      const isOrderButton = target.hasAttribute('data-field') && target.getAttribute('data-field') === 'order';
+      
+      // Platform links
+      const link = target.closest('a[href]');
+      
+      if (isMainImage || isSeeMore) {
+        this.handleGalleryClick(event, target);
         return;
       }
-
-      // Sort by distance from viewport
-      containersToLoad.sort((a, b) => a.distance - b.distance);
-
-      // Process in batches
-      const batchSize = config?.BATCH_SIZE || 30;
-      for (let i = 0; i < containersToLoad.length; i += batchSize) {
-        const batch = containersToLoad.slice(i, i + batchSize);
-        await this.processBatch(batch);
+      
+      if (isOrderButton) {
+        this.handleOrderClick(event, target);
+        return;
+      }
+      
+      // Platform tracking
+      if (link) {
+        this.handlePlatformClick(event, link);
       }
     },
 
-    // Process batch of containers
-    async processBatch(containers) {
-      const containerIds = containers.map(c => c.id);
+    // Handle gallery clicks
+    async handleGalleryClick(event, target) {
+      event.preventDefault();
       
-      try {
-        // Fetch product data
-        if (window.DorikFirebase?.preloadProducts) {
-          await window.DorikFirebase.preloadProducts(containerIds, 'high');
-        }
-
-        // Mark as processed
-        if (window.DorikState) {
-          containerIds.forEach(id => {
-            window.DorikState.processedContainers.add(id);
-          });
-        }
-
-        console.log(`📦 Processed batch: ${containerIds.length} containers`);
-
-      } catch (error) {
-        console.error('Batch processing error:', error);
+      const containerId = window.DorikUtils?.findContainerId(target);
+      if (!containerId) {
+        console.error('❌ Container ID not found for gallery');
+        return;
       }
-    },
-
-    // Calculate distance from viewport
-    getDistanceFromViewport(element) {
-      const rect = element.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
       
-      if (rect.top >= 0 && rect.top <= viewportHeight) {
-        return 0; // In viewport
-      } else if (rect.top > viewportHeight) {
-        return rect.top - viewportHeight; // Below viewport
+      console.log('🖱️ Gallery clicked:', containerId);
+      
+      if (window.DorikGallery?.handleGalleryClick) {
+        await window.DorikGallery.handleGalleryClick(target, containerId);
       } else {
-        return Math.abs(rect.bottom); // Above viewport
+        console.error('❌ Gallery module not available');
+      }
+    },
+
+    // Handle order clicks
+    async handleOrderClick(event, target) {
+      event.preventDefault();
+      
+      const containerId = window.DorikUtils?.findContainerId(target);
+      if (!containerId) {
+        console.error('❌ Container ID not found for order');
+        return;
+      }
+      
+      console.log('🖱️ Order clicked:', containerId);
+      
+      if (window.DorikForms?.handleOrderClick) {
+        await window.DorikForms.handleOrderClick(target, containerId);
+      } else {
+        console.error('❌ Forms module not available');
+      }
+    },
+
+    // Handle platform clicks
+    handlePlatformClick(event, link) {
+      const containerId = window.DorikUtils?.findContainerId(link);
+      if (!containerId) {
+        return;
+      }
+      
+      if (window.DorikTracking?.handlePlatformClick) {
+        window.DorikTracking.handlePlatformClick(link, containerId);
+      }
+    },
+
+    // Handle keyboard events
+    handleKeydown(event) {
+      // ESC key - close gallery
+      if (event.key === 'Escape') {
+        if (window.DorikGallery?.closeGallery) {
+          window.DorikGallery.closeGallery();
+        }
       }
     },
 
     // Setup cleanup handlers
-    setupCleanup() {
+    setupCleanupHandlers() {
       window.addEventListener('beforeunload', () => {
-        console.log('🧹 Performing cleanup...');
+        console.log('🧹 Performing system cleanup...');
         
         // Cleanup modules
-        window.DorikCache?.clear();
+        window.DorikCache?.cleanup();
         window.DorikTracking?.cleanup();
         window.DorikForms?.cleanup();
+        window.DorikGallery?.cleanup();
+        window.DorikLazy?.cleanup();
+        window.DorikFirebase?.cleanup();
         
-        // Clear observers
-        if (window.DorikState?.observers.intersection) {
-          window.DorikState.observers.intersection.disconnect();
+        // Clear global state
+        if (window.DorikState) {
+          if (window.DorikState.timers.cleanup) {
+            clearInterval(window.DorikState.timers.cleanup);
+          }
+          if (window.DorikState.timers.performance) {
+            clearInterval(window.DorikState.timers.performance);
+          }
         }
       });
     },
@@ -351,16 +368,26 @@
       const config = window.DorikConfig;
       if (!config?.DEBUG) return;
 
-      // Monitor performance every 5 minutes
-      setInterval(() => {
+      // Performance report every 5 minutes
+      const performanceTimer = setInterval(() => {
         this.reportPerformance();
       }, 300000);
+      
+      // Store timer reference
+      if (window.DorikState) {
+        window.DorikState.timers.performance = performanceTimer;
+      }
 
-      // Initial performance report
+      // Initial performance report after 10 seconds
       setTimeout(() => {
         this.reportPerformance();
         
-        // Track cache performance if available
+        // Track performance metrics
+        if (window.DorikTracking?.trackPerformance) {
+          window.DorikTracking.trackPerformance();
+        }
+        
+        // Track cache performance
         if (window.DorikTracking?.trackCachePerformance) {
           window.DorikTracking.trackCachePerformance();
         }
@@ -369,27 +396,36 @@
 
     // Report performance metrics
     reportPerformance() {
-      if (!performance.memory) return;
-
-      const memory = performance.memory;
-      const memoryMB = {
-        used: (memory.usedJSHeapSize / 1024 / 1024).toFixed(1),
-        total: (memory.totalJSHeapSize / 1024 / 1024).toFixed(1),
-        limit: (memory.jsHeapSizeLimit / 1024 / 1024).toFixed(1)
-      };
-
-      console.log('📊 Performance Report:');
-      console.log(`Memory: ${memoryMB.used}MB / ${memoryMB.total}MB / ${memoryMB.limit}MB`);
-      
-      if (window.DorikCache) {
-        console.table([
-          window.DorikCache.productCache?.getStats(),
-          window.DorikCache.imageCache?.getStats()
-        ]);
+      const memoryInfo = window.DorikUtils?.getMemoryInfo();
+      if (memoryInfo) {
+        console.log('📊 === PERFORMANCE REPORT ===');
+        console.log(`Memory: ${memoryInfo.used_mb}MB / ${memoryInfo.total_mb}MB / ${memoryInfo.limit_mb}MB`);
       }
       
-      if (window.DorikState) {
-        console.log('Counters:', window.DorikState.counters);
+      // Cache stats
+      if (window.DorikCache?.getStats) {
+        const cacheStats = window.DorikCache.getStats();
+        if (cacheStats.productCache && cacheStats.imageCache) {
+          console.table([cacheStats.productCache, cacheStats.imageCache]);
+        }
+      }
+      
+      // Module stats
+      const moduleStats = {
+        config: !!window.DorikConfig,
+        cache: window.DorikCache?.getStats() || null,
+        firebase: window.DorikFirebase?.getStats() || null,
+        tracking: window.DorikTracking?.getStats() || null,
+        gallery: window.DorikGallery?.getStats() || null,
+        forms: window.DorikForms?.getStats() || null,
+        lazy: window.DorikLazy?.getStats() || null
+      };
+      
+      console.log('Module Status:', moduleStats);
+      
+      // Global counters
+      if (window.DorikState?.counters) {
+        console.log('Global Counters:', window.DorikState.counters);
       }
     },
 
@@ -416,7 +452,8 @@
       const event = new CustomEvent('dorik:ready', {
         detail: {
           loadedModules: Array.from(this.loadedModules),
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          version: '2.0'
         }
       });
       
@@ -424,6 +461,20 @@
       
       // Also set global flag
       window.DORIK_READY = true;
+      
+      // Store global access
+      window.DorikSystem = {
+        loader: this,
+        config: window.DorikConfig,
+        utils: window.DorikUtils,
+        state: window.DorikState,
+        cache: window.DorikCache,
+        firebase: window.DorikFirebase,
+        tracking: window.DorikTracking,
+        gallery: window.DorikGallery,
+        forms: window.DorikForms,
+        lazy: window.DorikLazy
+      };
     },
 
     // Get system status
@@ -431,10 +482,16 @@
       return {
         loaded: this.loadedModules.size > 0,
         modules: Array.from(this.loadedModules),
-        cache: window.DorikCache?.getStats?.() || null,
-        gallery: window.DorikGallery?.getStats?.() || null,
-        forms: window.DorikForms?.getStats?.() || null,
-        tracking: window.DorikTracking?.getStats?.() || null,
+        ready: !!window.DORIK_READY,
+        version: '2.0',
+        stats: {
+          cache: window.DorikCache?.getStats?.() || null,
+          firebase: window.DorikFirebase?.getStats?.() || null,
+          tracking: window.DorikTracking?.getStats?.() || null,
+          gallery: window.DorikGallery?.getStats?.() || null,
+          forms: window.DorikForms?.getStats?.() || null,
+          lazy: window.DorikLazy?.getStats?.() || null
+        },
         state: window.DorikState || null
       };
     }
@@ -450,6 +507,6 @@
     window.DorikLoader.init();
   }
 
-  console.log('📋 Dorik Loader ready');
+  console.log('📋 Dorik Loader ready - modular system');
 
 })();
