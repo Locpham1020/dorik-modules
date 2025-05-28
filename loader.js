@@ -36,7 +36,7 @@
       },
       tracking: {
         file: 'tracking.min.js',
-        required: true,
+        required: false,
         priority: 4,
         depends: ['config']
       },
@@ -44,13 +44,13 @@
         file: 'gallery.min.js',
         required: false,
         priority: 5,
-        depends: ['config', 'cache', 'firebase', 'tracking']
+        depends: ['config', 'cache', 'firebase']
       },
       forms: {
         file: 'forms.min.js',
         required: false,
         priority: 6,
-        depends: ['config', 'tracking']
+        depends: ['config']
       }
     },
 
